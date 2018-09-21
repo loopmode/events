@@ -1,0 +1,21 @@
+{
+  "name": "@loopmode/events",
+  "version": "1.0.0",
+  "description": "Unified global event handling",
+  "main": "lib/index.js",
+  "repository": "git@github.com:loopmode/events.git",
+  "author": "Jovica Aleksic <jovica.aleksic@xailabs.de>",
+  "license": "MIT",
+  "scripts": {
+    "build": "babel src --out-dir lib --copy-files",
+    "lint": "eslint src",
+    "clean": "rm -rf lib/*",
+    "docs": "esdoc"
+  },
+  "devDependencies": {
+    "@loopmode/babel6-base": "^0.3.5"
+  },
+  "dependencies": {
+    "detect-passive-events": "^1.0.4"
+  }
+}

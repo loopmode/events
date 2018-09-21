@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/Events.js | package-name API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  <a href="./manual/index.html" data-ice="manualHeaderLink">Manual</a>
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/loopmode/events" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/Events.js~Events.html">Events</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/Events.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">import detectPassiveEvents from &apos;detect-passive-events&apos;;
+
+function createSignature({ target, type, capture, passive }) {
+    return `target:${target},type:${type},capture:${capture},passive:${passive}`;
+}
+
+function createEventOptions({ passive, capture } = {}) {
+    if (detectPassiveEvents.hasSupport === true) {
+        return { capture, passive };
+    }
+    return capture;
+}
+
+function mergeOptions(options, target) {
+    if (!target) {
+        target = options ? options.target || window : window;
+    }
+    if (typeof options === &apos;boolean&apos;) {
+        return { target, capture: options };
+    } else {
+        return { target, ...options };
+    }
+}
+
+/**
+ * The Events class.
+ * Creates a single global event listener per type and target.
+ *
+ * Usually, you want to use only one instance of this class.
+ * (Use the default export which is a singleton instance)
+ */
+export class Events {
+    /**
+     * An object containing &quot;known targets&quot; that are supported by default and for which shortcuts are added to the `on` nad `off` methods.
+     *
+     * @property {Window} window - The [Window](https://developer.mozilla.org/en-US/docs/Web/API/Window) object
+     * @property {HTMLDocument} document - The [Document](https://developer.mozilla.org/en-US/docs/Web/API/Document) object
+     * @property {HTMLBodyElement} body - The [Document.body](https://developer.mozilla.org/en-US/docs/Web/API/Document/body) object
+     */
+    static knownTargets = {
+        window: window,
+        // document might not exist
+        document: window &amp;&amp; window[&apos;document&apos;],
+        // document.body might not exist
+        body: window &amp;&amp; window[&apos;document&apos;] ? window[&apos;document&apos;][&apos;body&apos;] : undefined
+    };
+
+    /**
+     * A `signature&lt;String&gt;: handler&lt;Function&gt;` hashmap
+     * @private
+     */
+    handlers = {};
+
+    /**
+     * A `signature&lt;String&gt;: listeners:&lt;Array&gt;` hashmap
+     * @private
+     */
+    listeners = {};
+
+    /**
+     * Creates new instance.
+     * Adds shortcuts to the `on` and `off` methods for all known targets.
+     */
+    constructor() {
+        this.on = this.on.bind(this);
+        this.off = this.off.bind(this);
+
+        if (!this.constructor.prototype.__shortcutsInitialized) {
+            this.constructor.prototype.__shortcutsInitialized = true;
+            this.initializeShortcuts();
+        }
+    }
+
+    /**
+     * Adds an event listener callback.
+     * Creates a global event listener if necessary.
+     * Returns an object with a dispose function that can be called without arguments to remove the event listener callback.
+     *
+     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.
+     * @param {Function} listener - The event listener callback
+     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `useCapture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)
+     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase
+     * @param {Boolean} [options.passive] - Whether to use a passive event listener
+     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.
+     *
+     * @return {Object} - An object with a `dispose` function.
+     */
+    on(type, listener, options = {}) {
+        options = mergeOptions(options);
+
+        let { target = window, capture = false, passive = false } = options;
+
+        if (typeof target === &apos;string&apos;) {
+            // in case a valid string was provided, e.g. &apos;window&apos; or &apos;global&apos;
+            target = this.constructor.knownTargets[target];
+        }
+
+        if (!target) {
+            // in case an invalid string was provided, e.g. &apos;foo&apos;, or &apos;body&apos; in server-side code
+            if (process.env.NODE_ENV === &apos;development&apos;) {
+                console.warn(`Invalid target. Using ${window} instead.`);
+            }
+            target = window;
+        }
+
+        if (process.env.NODE_ENV === &apos;development&apos;) {
+            if (Object.values(this.constructor.knownTargets).indexOf(target) === -1) {
+                console
+                    .warn(
+                        `
+                        [Events] Unknown target ${target}.
+                        Make sure that its toString method returns a unique value.
+                        Set toString.isUnique flag to remove this warning.
+                        `
+                    )
+                    .replace(/\s\s+/g, &apos; &apos;);
+            }
+        }
+
+        const signature = createSignature({ target, type, capture, passive });
+
+        if (!this.listeners[signature]) {
+            this.listeners[signature] = [];
+        }
+
+        if (this.listeners[signature].indexOf(listener) === -1) {
+            this.listeners[signature].push(listener);
+        }
+
+        if (!this.handlers[signature]) {
+            this.handlers[signature] = event =&gt; this.listeners[signature].forEach(cb =&gt; cb(event));
+            target.addEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));
+        }
+
+        return { dispose: () =&gt; this.off(type, listener, { target, capture, passive }) };
+    }
+
+    /**
+     * Removes an event listener callback.
+     * Removes the global event listener as well if the callback was the only one.
+     *
+     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.
+     * @param {Function} listener - The event listener callback
+     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `capture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)
+     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase
+     * @param {Boolean} [options.passive] - Whether to use a passive event listener
+     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.
+     */
+    off(type, listener, options = {}) {
+        options = mergeOptions(options);
+
+        let { target = window, capture = false, passive = false } = options;
+
+        const signature = createSignature({ target, type, capture, passive });
+
+        if (this.listeners[signature]) {
+            const index = this.listeners[signature].indexOf(listener);
+            this.listeners[signature].splice(index, 1);
+        }
+
+        if (this.listeners[signature].length === 0 &amp;&amp; this.handlers[signature]) {
+            target.removeEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));
+            this.handlers[signature] = undefined;
+        }
+    }
+
+    /**
+     * Adds shortcut functions to the `on` and `off` methods for all known targets.
+     * Each function is configured with the proper target.
+     *
+     * Effectively, these two lines will execute the same:
+     * - `Events.on.body(&apos;click&apos;, this.handleBodyClick)`
+     * - `Events.on(&apos;click&apos;, this.handleBodyClick, { target: body })`
+     * @private
+     */
+    initializeShortcuts() {
+        Object.entries(this.constructor.knownTargets).forEach(([name, target]) =&gt; {
+            const proto = this.constructor.prototype;
+            proto.on[name] = (type, listener, options) =&gt; proto.on(type, listener, mergeOptions(options, target));
+            proto.off[name] = (type, listener, options) =&gt; proto.off(type, listener, mergeOptions(options, target));
+        });
+    }
+}
+
+export default new Events();
+</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

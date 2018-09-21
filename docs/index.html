@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl">
+  <title data-ice="title">package-name API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  <a href="./manual/index.html" data-ice="manualHeaderLink">Manual</a>
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/loopmode/events" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/Events.js~Events.html">Events</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><div data-ice="index" class="github-markdown"><h1 id="-loopmode-events">@loopmode/events</h1>
+<p>Unified global event handling.</p>
+<p>Registers no more than a single listener per event type, invokes all registered callbacks.
+The event listener is created when needed and removed again when obsolete.</p>
+<ul>
+<li>Safe support for passive events via <a href="https://github.com/rafrex/detect-passive-events">detect-passive-events</a></li>
+<li>Currently, only <code>window</code>, <code>document</code> and <code>body</code> are supported as event targets (Default is <code>window</code>)</li>
+</ul>
+<p><br>
+Supports the same signature as <a href="https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener">addEventListener</a>,
+so it should be safe to search and replace in your code as follows:</p>
+<ul>
+<li><code>window.addEventListener</code> -&gt; <code>Events.on</code></li>
+<li><code>document.addEventListener(&apos;mousedown&apos;, this.handleMouseDown)</code> -&gt; <code>Events.on.document(&apos;mousedown&apos;, this.handleMouseDown)</code></li>
+<li><code>document.addEventListener(&apos;mousedown&apos;, this.handleMouseDown)</code> -&gt; <code>Events.on(&apos;mousedown&apos;, this.handleMouseDown, {target: document})</code></li>
+<li><code>window.removeEventListener</code> -&gt; <code>Events.off</code></li>
+<li>...</li>
+</ul>
+<h2 id="motivation">Motivation</h2>
+<p>Keep the number of global event listeners low, especially when using in react components that are rendered dozens or hundrets of time on the screen.
+Support passive events, stay as light-weight as possible.</p>
+<h2 id="installation">Installation</h2>
+<pre><code><code class="source-code prettyprint">yarn add @loopmode/events</code>
+</code></pre><h2 id="usage">Usage</h2>
+<p>The default export is a singleton instance of the class. Typically, that&apos;s what you want.</p>
+<p>Basic usage:</p>
+<pre><code><code class="source-code prettyprint">import Events from &apos;@loopmode/events&apos;;
+
+function onResize(event) {
+    console.log(&apos;resize&apos;, event)
+}
+
+Events.on(&apos;resize&apos;, onResize);
+Events.off(&apos;resize&apos;, onResize);
+
+
+// remember to pass the same options when removing listeners:
+Events.on(&apos;resize&apos;, onResize, {capture: true});
+Events.off(&apos;resize&apos;, onResize, {capture: true})
+
+
+// alternatively, use returned object with dispose function:
+const listener = Events.on(&apos;mousemove&apos;, onResize, {capture: true, target: document.body, passive: true})
+// no need to provide any arguments
+listener.dispose();</code>
+</code></pre><p>In react component, with passive option:</p>
+<pre><code><code class="source-code prettyprint">import React, { PureComponent } from &apos;react&apos;;
+import Events from &apos;@loopmode/events&apos;;
+
+export class MyComponent extends PureComponent {
+    state = {
+        delta: 0
+    };
+    componentDidMount() {
+        this.wheelListener = Events.on(&apos;wheel&apos;, this.handleWheel, { passive: true })
+    }
+    componentWillUnmount() {
+        // same as Events.off(&apos;wheel&apos;, this.handleWheel, { passive: true })
+        this.wheelListener.dispose();
+    }
+    handleWheel = (event) =&gt; {
+        this.setState({
+            delta: event.deltaY
+        })
+    };
+    render() {
+        return (
+            &lt;div&gt;{this.state.delta}&lt;/div&gt;
+        );
+    }
+}</code>
+</code></pre><p>If you need additional instances, use the named <code>Events</code> export:</p>
+<pre><code><code class="source-code prettyprint">import { Events } from &apos;@loopmode/events&apos;;
+
+const myEvents = new Events();
+
+function onResize(event) {
+    console.log(&apos;resize&apos;, event)
+}
+
+myEvents.on(&apos;resize&apos;, onResize);</code>
+</code></pre><p>Every instance may register up to one global event listener per event type.</p>
+</div>
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>
