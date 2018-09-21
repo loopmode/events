@@ -342,6 +342,12 @@ window.esdocSearchIndex = [
     "file"
   ],
   [
+    "src/events.js~events#addeventlistener",
+    "class/src/Events.js~Events.html#instance-method-addEventListener",
+    "src/Events.js~Events#addEventListener",
+    "method"
+  ],
+  [
     "src/events.js~events#constructor",
     "class/src/Events.js~Events.html#instance-constructor-constructor",
     "src/Events.js~Events#constructor",
@@ -357,6 +363,12 @@ window.esdocSearchIndex = [
     "src/events.js~events#on",
     "class/src/Events.js~Events.html#instance-method-on",
     "src/Events.js~Events#on",
+    "method"
+  ],
+  [
+    "src/events.js~events#removeeventlistener",
+    "class/src/Events.js~Events.html#instance-method-removeEventListener",
+    "src/Events.js~Events#removeEventListener",
     "method"
   ],
   [

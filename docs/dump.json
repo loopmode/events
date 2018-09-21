@@ -3,7 +3,7 @@
     "__docId__": 0,
     "kind": "file",
     "name": "src/Events.js",
-    "content": "import detectPassiveEvents from 'detect-passive-events';\n\nfunction createSignature({ target, type, capture, passive }) {\n    return `target:${target},type:${type},capture:${capture},passive:${passive}`;\n}\n\nfunction createEventOptions({ passive, capture } = {}) {\n    if (detectPassiveEvents.hasSupport === true) {\n        return { capture, passive };\n    }\n    return capture;\n}\n\nfunction mergeOptions(options, target) {\n    if (!target) {\n        target = options ? options.target || window : window;\n    }\n    if (typeof options === 'boolean') {\n        return { target, capture: options };\n    } else {\n        return { target, ...options };\n    }\n}\n\n/**\n * The Events class.\n * Creates a single global event listener per type and target.\n *\n * Usually, you want to use only one instance of this class.\n * (Use the default export which is a singleton instance)\n */\nexport class Events {\n    /**\n     * An object containing \"known targets\" that are supported by default and for which shortcuts are added to the `on` nad `off` methods.\n     *\n     * @property {Window} window - The [Window](https://developer.mozilla.org/en-US/docs/Web/API/Window) object\n     * @property {HTMLDocument} document - The [Document](https://developer.mozilla.org/en-US/docs/Web/API/Document) object\n     * @property {HTMLBodyElement} body - The [Document.body](https://developer.mozilla.org/en-US/docs/Web/API/Document/body) object\n     */\n    static knownTargets = {\n        window: window,\n        // document might not exist\n        document: window && window['document'],\n        // document.body might not exist\n        body: window && window['document'] ? window['document']['body'] : undefined\n    };\n\n    /**\n     * A `signature<String>: handler<Function>` hashmap\n     * @private\n     */\n    handlers = {};\n\n    /**\n     * A `signature<String>: listeners:<Array>` hashmap\n     * @private\n     */\n    listeners = {};\n\n    /**\n     * Creates new instance.\n     * Adds shortcuts to the `on` and `off` methods for all known targets.\n     */\n    constructor() {\n        this.on = this.on.bind(this);\n        this.off = this.off.bind(this);\n\n        if (!this.constructor.prototype.__shortcutsInitialized) {\n            this.constructor.prototype.__shortcutsInitialized = true;\n            this.initializeShortcuts();\n        }\n    }\n\n    /**\n     * Adds an event listener callback.\n     * Creates a global event listener if necessary.\n     * Returns an object with a dispose function that can be called without arguments to remove the event listener callback.\n     *\n     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.\n     * @param {Function} listener - The event listener callback\n     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `useCapture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)\n     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase\n     * @param {Boolean} [options.passive] - Whether to use a passive event listener\n     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.\n     *\n     * @return {Object} - An object with a `dispose` function.\n     */\n    on(type, listener, options = {}) {\n        options = mergeOptions(options);\n\n        let { target = window, capture = false, passive = false } = options;\n\n        if (typeof target === 'string') {\n            // in case a valid string was provided, e.g. 'window' or 'global'\n            target = this.constructor.knownTargets[target];\n        }\n\n        if (!target) {\n            // in case an invalid string was provided, e.g. 'foo', or 'body' in server-side code\n            if (process.env.NODE_ENV === 'development') {\n                console.warn(`Invalid target. Using ${window} instead.`);\n            }\n            target = window;\n        }\n\n        if (process.env.NODE_ENV === 'development') {\n            if (Object.values(this.constructor.knownTargets).indexOf(target) === -1) {\n                console\n                    .warn(\n                        `\n                        [Events] Unknown target ${target}.\n                        Make sure that its toString method returns a unique value.\n                        Set toString.isUnique flag to remove this warning.\n                        `\n                    )\n                    .replace(/\\s\\s+/g, ' ');\n            }\n        }\n\n        const signature = createSignature({ target, type, capture, passive });\n\n        if (!this.listeners[signature]) {\n            this.listeners[signature] = [];\n        }\n\n        if (this.listeners[signature].indexOf(listener) === -1) {\n            this.listeners[signature].push(listener);\n        }\n\n        if (!this.handlers[signature]) {\n            this.handlers[signature] = event => this.listeners[signature].forEach(cb => cb(event));\n            target.addEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));\n        }\n\n        return { dispose: () => this.off(type, listener, { target, capture, passive }) };\n    }\n\n    /**\n     * Removes an event listener callback.\n     * Removes the global event listener as well if the callback was the only one.\n     *\n     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.\n     * @param {Function} listener - The event listener callback\n     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `capture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)\n     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase\n     * @param {Boolean} [options.passive] - Whether to use a passive event listener\n     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.\n     */\n    off(type, listener, options = {}) {\n        options = mergeOptions(options);\n\n        let { target = window, capture = false, passive = false } = options;\n\n        const signature = createSignature({ target, type, capture, passive });\n\n        if (this.listeners[signature]) {\n            const index = this.listeners[signature].indexOf(listener);\n            this.listeners[signature].splice(index, 1);\n        }\n\n        if (this.listeners[signature].length === 0 && this.handlers[signature]) {\n            target.removeEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));\n            this.handlers[signature] = undefined;\n        }\n    }\n\n    /**\n     * Adds shortcut functions to the `on` and `off` methods for all known targets.\n     * Each function is configured with the proper target.\n     *\n     * Effectively, these two lines will execute the same:\n     * - `Events.on.body('click', this.handleBodyClick)`\n     * - `Events.on('click', this.handleBodyClick, { target: body })`\n     * @private\n     */\n    initializeShortcuts() {\n        Object.entries(this.constructor.knownTargets).forEach(([name, target]) => {\n            const proto = this.constructor.prototype;\n            proto.on[name] = (type, listener, options) => proto.on(type, listener, mergeOptions(options, target));\n            proto.off[name] = (type, listener, options) => proto.off(type, listener, mergeOptions(options, target));\n        });\n    }\n}\n\nexport default new Events();\n",
+    "content": "import detectPassiveEvents from 'detect-passive-events';\n\nfunction createSignature({ target, type, capture, passive }) {\n    return `target:${target},type:${type},capture:${capture},passive:${passive}`;\n}\n\nfunction createEventOptions({ passive, capture } = {}) {\n    if (detectPassiveEvents.hasSupport === true) {\n        return { capture, passive };\n    }\n    return capture;\n}\n\nfunction mergeOptions(options, target) {\n    if (!target) {\n        target = options ? options.target || window : window;\n    }\n    if (typeof options === 'boolean') {\n        return { target, capture: options };\n    } else {\n        return { target, ...options };\n    }\n}\n\n/**\n * The Events class.\n * Creates a single global event listener per type and target.\n *\n * Usually, you want to use only one instance of this class.\n * (Use the default export which is a singleton instance)\n */\nexport class Events {\n    /**\n     * An object containing \"known targets\" that are supported by default and for which shortcuts are added to the `on` nad `off` methods.\n     *\n     */\n    static knownTargets = {\n        window: window,\n        // document might not exist\n        document: window && window['document'],\n        // document.body might not exist\n        body: window && window['document'] ? window['document']['body'] : undefined\n    };\n\n    /**\n     * A `signature<String>: handler<Function>` hashmap\n     * @private\n     */\n    handlers = {};\n\n    /**\n     * A `signature<String>: listeners:<Array>` hashmap\n     * @private\n     */\n    listeners = {};\n\n    /**\n     * Creates new instance.\n     * Adds shortcuts to the `on` and `off` methods for all known targets.\n     */\n    constructor() {\n        this.on = this.on.bind(this);\n        this.off = this.off.bind(this);\n\n        if (!this.constructor.prototype.__shortcutsInitialized) {\n            this.constructor.prototype.__shortcutsInitialized = true;\n            this.initializeShortcuts();\n        }\n    }\n\n    /**\n     * Adds an event listener callback.\n     * Creates a global event listener if necessary.\n     * Returns an object with a dispose function that can be called without arguments to remove the event listener callback.\n     *\n     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.\n     * @param {Function} listener - The event listener callback\n     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `useCapture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)\n     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase\n     * @param {Boolean} [options.passive] - Whether to use a passive event listener\n     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.\n     *\n     * @return {Object} - An object with a `dispose` function.\n     */\n    on(type, listener, options = {}) {\n        options = mergeOptions(options);\n\n        let { target = window, capture = false, passive = false } = options;\n\n        if (typeof target === 'string') {\n            // in case a valid string was provided, e.g. 'window' or 'global'\n            target = this.constructor.knownTargets[target];\n        }\n\n        if (!target) {\n            // in case an invalid string was provided, e.g. 'foo', or 'body' in server-side code\n            if (process.env.NODE_ENV === 'development') {\n                console.warn(`Invalid target. Using ${window} instead.`);\n            }\n            target = window;\n        }\n\n        if (process.env.NODE_ENV === 'development') {\n            if (Object.values(this.constructor.knownTargets).indexOf(target) === -1) {\n                console\n                    .warn(\n                        `\n                        [Events] Unknown target ${target}.\n                        Make sure that its toString method returns a unique value.\n                        Set toString.isUnique flag to remove this warning.\n                        `\n                    )\n                    .replace(/\\s\\s+/g, ' ');\n            }\n        }\n\n        const signature = createSignature({ target, type, capture, passive });\n\n        if (!this.listeners[signature]) {\n            this.listeners[signature] = [];\n        }\n\n        if (this.listeners[signature].indexOf(listener) === -1) {\n            this.listeners[signature].push(listener);\n        }\n\n        if (!this.handlers[signature]) {\n            this.handlers[signature] = event => this.listeners[signature].forEach(cb => cb(event));\n            target.addEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));\n        }\n\n        return { dispose: () => this.off(type, listener, { target, capture, passive }) };\n    }\n    addEventListener(type, listener, options) {\n        return this.on(type, listener, options);\n    }\n    /**\n     * Removes an event listener callback.\n     * Removes the global event listener as well if the callback was the only one.\n     *\n     * @param {String} type - A case-sensitive string representing the [event type](https://developer.mozilla.org/en-US/docs/Web/Events) to listen for.\n     * @param {Function} listener - The event listener callback\n     * @param {Object|Boolean} [options] - An [options object](https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md#eventlisteneroptions) or a [boolean `capture` flag](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#The_event_listener_callback#Parameters)\n     * @param {Boolean} [options.capture] - Whether to listen during the capturing phase\n     * @param {Boolean} [options.passive] - Whether to use a passive event listener\n     * @param {Object|String} [options.target=window] - The target element on which to add the event listener.\n     */\n    off(type, listener, options = {}) {\n        options = mergeOptions(options);\n\n        let { target = window, capture = false, passive = false } = options;\n\n        const signature = createSignature({ target, type, capture, passive });\n\n        if (this.listeners[signature]) {\n            const index = this.listeners[signature].indexOf(listener);\n            this.listeners[signature].splice(index, 1);\n        }\n\n        if (this.listeners[signature].length === 0 && this.handlers[signature]) {\n            target.removeEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));\n            this.handlers[signature] = undefined;\n        }\n    }\n    removeEventListener(type, listener, options) {\n        return this.on(type, listener, options);\n    }\n\n    /**\n     * Adds shortcut functions to the `on` and `off` methods for all known targets.\n     * Each function is configured with the proper target.\n     *\n     * Effectively, these two lines will execute the same:\n     * - `Events.on.body('click', this.handleBodyClick)`\n     * - `Events.on('click', this.handleBodyClick, { target: body })`\n     * @private\n     */\n    initializeShortcuts() {\n        Object.entries(this.constructor.knownTargets).forEach(([name, target]) => {\n            const proto = this.constructor.prototype;\n            proto.on[name] = (type, listener, options) => proto.on(type, listener, mergeOptions(options, target));\n            proto.off[name] = (type, listener, options) => proto.off(type, listener, mergeOptions(options, target));\n        });\n    }\n}\n\nexport default new Events();\n",
     "static": true,
     "longname": "src/Events.js",
     "access": null,
@@ -158,39 +158,7 @@
     "longname": "src/Events.js~Events.knownTargets",
     "access": null,
     "description": "An object containing \"known targets\" that are supported by default and for which shortcuts are added to the `on` nad `off` methods.",
-    "lineNumber": 40,
-    "properties": [
-      {
-        "nullable": null,
-        "types": [
-          "Window"
-        ],
-        "spread": false,
-        "optional": false,
-        "name": "window",
-        "description": "The [Window](https://developer.mozilla.org/en-US/docs/Web/API/Window) object"
-      },
-      {
-        "nullable": null,
-        "types": [
-          "HTMLDocument"
-        ],
-        "spread": false,
-        "optional": false,
-        "name": "document",
-        "description": "The [Document](https://developer.mozilla.org/en-US/docs/Web/API/Document) object"
-      },
-      {
-        "nullable": null,
-        "types": [
-          "HTMLBodyElement"
-        ],
-        "spread": false,
-        "optional": false,
-        "name": "body",
-        "description": "The [Document.body](https://developer.mozilla.org/en-US/docs/Web/API/Document/body) object"
-      }
-    ],
+    "lineNumber": 37,
     "type": {
       "types": [
         "{\"window\": *, \"document\": *, \"body\": *}"
@@ -206,7 +174,7 @@
     "longname": "src/Events.js~Events#handlers",
     "access": "private",
     "description": "A `signature<String>: handler<Function>` hashmap",
-    "lineNumber": 52,
+    "lineNumber": 49,
     "type": {
       "types": [
         "{}"
@@ -222,7 +190,7 @@
     "longname": "src/Events.js~Events#listeners",
     "access": "private",
     "description": "A `signature<String>: listeners:<Array>` hashmap",
-    "lineNumber": 58,
+    "lineNumber": 55,
     "type": {
       "types": [
         "{}"
@@ -240,7 +208,7 @@
     "longname": "src/Events.js~Events#constructor",
     "access": null,
     "description": "Creates new instance.\nAdds shortcuts to the `on` and `off` methods for all known targets.",
-    "lineNumber": 64,
+    "lineNumber": 61,
     "params": []
   },
   {
@@ -252,7 +220,7 @@
     "longname": "src/Events.js~Events#on",
     "access": null,
     "description": null,
-    "lineNumber": 65,
+    "lineNumber": 62,
     "undocument": true,
     "unknown": [
       {
@@ -275,7 +243,7 @@
     "longname": "src/Events.js~Events#off",
     "access": null,
     "description": null,
-    "lineNumber": 66,
+    "lineNumber": 63,
     "undocument": true,
     "unknown": [
       {
@@ -300,7 +268,7 @@
     "longname": "src/Events.js~Events#on",
     "access": null,
     "description": "Adds an event listener callback.\nCreates a global event listener if necessary.\nReturns an object with a dispose function that can be called without arguments to remove the event listener callback.",
-    "lineNumber": 88,
+    "lineNumber": 85,
     "params": [
       {
         "nullable": null,
@@ -379,6 +347,51 @@
   {
     "__docId__": 12,
     "kind": "method",
+    "name": "addEventListener",
+    "memberof": "src/Events.js~Events",
+    "generator": false,
+    "async": false,
+    "static": false,
+    "longname": "src/Events.js~Events#addEventListener",
+    "access": null,
+    "description": null,
+    "lineNumber": 134,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "params": [
+      {
+        "name": "type",
+        "types": [
+          "*"
+        ]
+      },
+      {
+        "name": "listener",
+        "types": [
+          "*"
+        ]
+      },
+      {
+        "name": "options",
+        "types": [
+          "*"
+        ]
+      }
+    ],
+    "return": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 13,
+    "kind": "method",
     "name": "off",
     "memberof": "src/Events.js~Events",
     "generator": false,
@@ -387,7 +400,7 @@
     "longname": "src/Events.js~Events#off",
     "access": null,
     "description": "Removes an event listener callback.\nRemoves the global event listener as well if the callback was the only one.",
-    "lineNumber": 149,
+    "lineNumber": 148,
     "params": [
       {
         "nullable": null,
@@ -456,7 +469,52 @@
     ]
   },
   {
-    "__docId__": 13,
+    "__docId__": 14,
+    "kind": "method",
+    "name": "removeEventListener",
+    "memberof": "src/Events.js~Events",
+    "generator": false,
+    "async": false,
+    "static": false,
+    "longname": "src/Events.js~Events#removeEventListener",
+    "access": null,
+    "description": null,
+    "lineNumber": 165,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "params": [
+      {
+        "name": "type",
+        "types": [
+          "*"
+        ]
+      },
+      {
+        "name": "listener",
+        "types": [
+          "*"
+        ]
+      },
+      {
+        "name": "options",
+        "types": [
+          "*"
+        ]
+      }
+    ],
+    "return": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 15,
     "kind": "method",
     "name": "initializeShortcuts",
     "memberof": "src/Events.js~Events",
@@ -466,11 +524,11 @@
     "longname": "src/Events.js~Events#initializeShortcuts",
     "access": "private",
     "description": "Adds shortcut functions to the `on` and `off` methods for all known targets.\nEach function is configured with the proper target.\n\nEffectively, these two lines will execute the same:\n- `Events.on.body('click', this.handleBodyClick)`\n- `Events.on('click', this.handleBodyClick, { target: body })`",
-    "lineNumber": 176,
+    "lineNumber": 178,
     "params": []
   },
   {
-    "__docId__": 14,
+    "__docId__": 16,
     "kind": "file",
     "name": "src/index.js",
     "content": "export default from './Events';\nexport { Events } from './Events';\n",
@@ -481,7 +539,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 16,
+    "__docId__": 18,
     "kind": "external",
     "name": "Infinity",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Infinity",
@@ -493,7 +551,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 17,
+    "__docId__": 19,
     "kind": "external",
     "name": "NaN",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/NaN",
@@ -505,7 +563,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 18,
+    "__docId__": 20,
     "kind": "external",
     "name": "undefined",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined",
@@ -517,7 +575,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 19,
+    "__docId__": 21,
     "kind": "external",
     "name": "null",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null",
@@ -529,7 +587,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 20,
+    "__docId__": 22,
     "kind": "external",
     "name": "Object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -541,7 +599,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 21,
+    "__docId__": 23,
     "kind": "external",
     "name": "object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -553,7 +611,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 22,
+    "__docId__": 24,
     "kind": "external",
     "name": "Function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -565,7 +623,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 23,
+    "__docId__": 25,
     "kind": "external",
     "name": "function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -577,7 +635,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 24,
+    "__docId__": 26,
     "kind": "external",
     "name": "Boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -589,7 +647,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 25,
+    "__docId__": 27,
     "kind": "external",
     "name": "boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -601,7 +659,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 26,
+    "__docId__": 28,
     "kind": "external",
     "name": "Symbol",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol",
@@ -613,7 +671,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 27,
+    "__docId__": 29,
     "kind": "external",
     "name": "Error",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error",
@@ -625,7 +683,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 28,
+    "__docId__": 30,
     "kind": "external",
     "name": "EvalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/EvalError",
@@ -637,7 +695,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 29,
+    "__docId__": 31,
     "kind": "external",
     "name": "InternalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/InternalError",
@@ -649,7 +707,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 30,
+    "__docId__": 32,
     "kind": "external",
     "name": "RangeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RangeError",
@@ -661,7 +719,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 31,
+    "__docId__": 33,
     "kind": "external",
     "name": "ReferenceError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ReferenceError",
@@ -673,7 +731,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 32,
+    "__docId__": 34,
     "kind": "external",
     "name": "SyntaxError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SyntaxError",
@@ -685,7 +743,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 33,
+    "__docId__": 35,
     "kind": "external",
     "name": "TypeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError",
@@ -697,7 +755,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 34,
+    "__docId__": 36,
     "kind": "external",
     "name": "URIError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/URIError",
@@ -709,7 +767,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 35,
+    "__docId__": 37,
     "kind": "external",
     "name": "Number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -721,7 +779,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 36,
+    "__docId__": 38,
     "kind": "external",
     "name": "number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -733,7 +791,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 37,
+    "__docId__": 39,
     "kind": "external",
     "name": "Date",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date",
@@ -745,7 +803,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 38,
+    "__docId__": 40,
     "kind": "external",
     "name": "String",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -757,7 +815,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 39,
+    "__docId__": 41,
     "kind": "external",
     "name": "string",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -769,7 +827,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 40,
+    "__docId__": 42,
     "kind": "external",
     "name": "RegExp",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp",
@@ -781,7 +839,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 41,
+    "__docId__": 43,
     "kind": "external",
     "name": "Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
@@ -793,7 +851,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 42,
+    "__docId__": 44,
     "kind": "external",
     "name": "Int8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array",
@@ -805,7 +863,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 43,
+    "__docId__": 45,
     "kind": "external",
     "name": "Uint8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array",
@@ -817,7 +875,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 44,
+    "__docId__": 46,
     "kind": "external",
     "name": "Uint8ClampedArray",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray",
@@ -829,7 +887,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 45,
+    "__docId__": 47,
     "kind": "external",
     "name": "Int16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int16Array",
@@ -841,7 +899,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 46,
+    "__docId__": 48,
     "kind": "external",
     "name": "Uint16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array",
@@ -853,7 +911,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 47,
+    "__docId__": 49,
     "kind": "external",
     "name": "Int32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int32Array",
@@ -865,7 +923,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 48,
+    "__docId__": 50,
     "kind": "external",
     "name": "Uint32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array",
@@ -877,7 +935,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 49,
+    "__docId__": 51,
     "kind": "external",
     "name": "Float32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float32Array",
@@ -889,7 +947,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 50,
+    "__docId__": 52,
     "kind": "external",
     "name": "Float64Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array",
@@ -901,7 +959,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 51,
+    "__docId__": 53,
     "kind": "external",
     "name": "Map",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map",
@@ -913,7 +971,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 52,
+    "__docId__": 54,
     "kind": "external",
     "name": "Set",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set",
@@ -925,7 +983,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 53,
+    "__docId__": 55,
     "kind": "external",
     "name": "WeakMap",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap",
@@ -937,7 +995,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 54,
+    "__docId__": 56,
     "kind": "external",
     "name": "WeakSet",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet",
@@ -949,7 +1007,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 55,
+    "__docId__": 57,
     "kind": "external",
     "name": "ArrayBuffer",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer",
@@ -961,7 +1019,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 56,
+    "__docId__": 58,
     "kind": "external",
     "name": "DataView",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView",
@@ -973,7 +1031,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 57,
+    "__docId__": 59,
     "kind": "external",
     "name": "JSON",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON",
@@ -985,7 +1043,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 58,
+    "__docId__": 60,
     "kind": "external",
     "name": "Promise",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
@@ -997,7 +1055,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 59,
+    "__docId__": 61,
     "kind": "external",
     "name": "Generator",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator",
@@ -1009,7 +1067,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 60,
+    "__docId__": 62,
     "kind": "external",
     "name": "GeneratorFunction",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/GeneratorFunction",
@@ -1021,7 +1079,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 61,
+    "__docId__": 63,
     "kind": "external",
     "name": "Reflect",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect",
@@ -1033,7 +1091,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 62,
+    "__docId__": 64,
     "kind": "external",
     "name": "Proxy",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy",
@@ -1046,7 +1104,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 64,
+    "__docId__": 66,
     "kind": "external",
     "name": "CanvasRenderingContext2D",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D",
@@ -1058,7 +1116,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 65,
+    "__docId__": 67,
     "kind": "external",
     "name": "DocumentFragment",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/DocumentFragment",
@@ -1070,7 +1128,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 66,
+    "__docId__": 68,
     "kind": "external",
     "name": "Element",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Element",
@@ -1082,7 +1140,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 67,
+    "__docId__": 69,
     "kind": "external",
     "name": "Event",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Event",
@@ -1094,7 +1152,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 68,
+    "__docId__": 70,
     "kind": "external",
     "name": "Node",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Node",
@@ -1106,7 +1164,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 69,
+    "__docId__": 71,
     "kind": "external",
     "name": "NodeList",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/NodeList",
@@ -1118,7 +1176,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 70,
+    "__docId__": 72,
     "kind": "external",
     "name": "XMLHttpRequest",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/XMLHttpRequest",
@@ -1130,7 +1188,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 71,
+    "__docId__": 73,
     "kind": "external",
     "name": "AudioContext",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/AudioContext",

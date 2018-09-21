@@ -7,7 +7,7 @@
   "author": "Jovica Aleksic <jovica.aleksic@xailabs.de>",
   "license": "MIT",
   "scripts": {
-    "build": "babel src --out-dir lib --copy-files",
+    "build": "babel src --out-dir lib --copy-files --no-comments",
     "lint": "eslint src",
     "clean": "rm -rf lib/*",
     "docs": "esdoc"

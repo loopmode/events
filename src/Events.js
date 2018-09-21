@@ -33,9 +33,6 @@ export class Events {
     /**
      * An object containing "known targets" that are supported by default and for which shortcuts are added to the `on` nad `off` methods.
      *
-     * @property {Window} window - The [Window](https://developer.mozilla.org/en-US/docs/Web/API/Window) object
-     * @property {HTMLDocument} document - The [Document](https://developer.mozilla.org/en-US/docs/Web/API/Document) object
-     * @property {HTMLBodyElement} body - The [Document.body](https://developer.mozilla.org/en-US/docs/Web/API/Document/body) object
      */
     static knownTargets = {
         window: window,
@@ -134,7 +131,9 @@ export class Events {
 
         return { dispose: () => this.off(type, listener, { target, capture, passive }) };
     }
-
+    addEventListener(type, listener, options) {
+        return this.on(type, listener, options);
+    }
     /**
      * Removes an event listener callback.
      * Removes the global event listener as well if the callback was the only one.
@@ -162,6 +161,9 @@ export class Events {
             target.removeEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));
             this.handlers[signature] = undefined;
         }
+    }
+    removeEventListener(type, listener, options) {
+        return this.on(type, listener, options);
     }
 
     /**
