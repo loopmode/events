@@ -1,6 +1,10 @@
 ### 1.0.2
 
--   Fix typings
+-   Fix TypeScript typings - add Subscription interface
+
+### 1.0.2
+
+-   Fix TypeScript typings
 
 ### 1.0.1
 

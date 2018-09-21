@@ -6,6 +6,10 @@ interface AddEventListenerOptions {
 interface EventListener {
     handleEvent(evt: Event): void;
 }
+
+interface Subscription {
+    dispose(): void;
+}
 declare module '@loopmode/events' {
     export function on(
         type: string,
