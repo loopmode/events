@@ -88,7 +88,6 @@ export class Events {
         let { target = window, capture = false, passive = false } = options;
 
         if (typeof target === 'string') {
-            // in case a valid string was provided, e.g. 'window' or 'global'
             target = this.constructor.knownTargets[target];
         }
 
@@ -154,10 +153,11 @@ export class Events {
 
         if (this.listeners[signature]) {
             const index = this.listeners[signature].indexOf(listener);
+
             this.listeners[signature].splice(index, 1);
         }
 
-        if (this.listeners[signature].length === 0 && this.handlers[signature]) {
+        if (this.listeners[signature] && this.listeners[signature].length === 0 && this.handlers[signature]) {
             target.removeEventListener(type, this.handlers[signature], createEventOptions({ passive, capture }));
             this.handlers[signature] = undefined;
         }
