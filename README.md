@@ -18,6 +18,10 @@ so it should be safe to search and replace in your code as follows:
 -   `window.removeEventListener` -> `Events.off`
 -   ...
 
+## Documentation
+
+See [https://loopmode.github.io/events/](https://loopmode.github.io/events/)
+
 ## Motivation
 
 Keep the number of global event listeners low, especially when using in react components that are rendered dozens or hundrets of time on the screen.
