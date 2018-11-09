@@ -1,4 +1,5 @@
 import detectPassiveEvents from 'detect-passive-events';
+import root from 'window-or-global';
 
 function createSignature({ target, type, capture, passive }) {
     return `target:${target},type:${type},capture:${capture},passive:${passive}`;
@@ -13,7 +14,7 @@ function createEventOptions({ passive, capture } = {}) {
 
 function mergeOptions(options, target) {
     if (!target) {
-        target = options ? options.target || window : window;
+        target = options ? options.target || root : root;
     }
     if (typeof options === 'boolean') {
         return { target, capture: options };
@@ -35,11 +36,11 @@ export class Events {
      *
      */
     static knownTargets = {
-        window: window,
+        window: root,
         // document might not exist
-        document: window && window['document'],
+        document: root && root['document'],
         // document.body might not exist
-        body: window && window['document'] ? window['document']['body'] : undefined
+        body: root && root['document'] ? root['document']['body'] : undefined
     };
 
     /**
@@ -85,7 +86,7 @@ export class Events {
     on(type, listener, options = {}) {
         options = mergeOptions(options);
 
-        let { target = window, capture = false, passive = false } = options;
+        let { target = root, capture = false, passive = false } = options;
 
         if (typeof target === 'string') {
             target = this.constructor.knownTargets[target];
@@ -94,9 +95,9 @@ export class Events {
         if (!target) {
             // in case an invalid string was provided, e.g. 'foo', or 'body' in server-side code
             if (process.env.NODE_ENV === 'development') {
-                console.warn(`Invalid target. Using ${window} instead.`);
+                console.warn(`Invalid target. Using ${root} instead.`);
             }
-            target = window;
+            target = root;
         }
 
         if (process.env.NODE_ENV === 'development') {
@@ -147,7 +148,7 @@ export class Events {
     off(type, listener, options = {}) {
         options = mergeOptions(options);
 
-        let { target = window, capture = false, passive = false } = options;
+        let { target = root, capture = false, passive = false } = options;
 
         const signature = createSignature({ target, type, capture, passive });
 
